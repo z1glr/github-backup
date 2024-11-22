@@ -20,13 +20,16 @@ type githubUser struct {
 }
 
 var githubUsers []githubUser
+var dataDir string
 
 func init() {
 	if err := godotenv.Load(".env"); err != nil {
 		log.Fatalln("Error loading .env file")
 	}
 
-	credentials := strings.Split(os.Getenv("CREDENTIALS"), ",")
+	dataDir = os.Getenv("DATA_DIR")
+
+	credentials := strings.Split(os.Getenv("CREDENTIALS_GITHUB"), ",")
 
 	for _, credential := range credentials {
 		components := strings.Split(credential, ":")
@@ -51,7 +54,7 @@ func (g *githubUser) backup() error {
 	} else {
 		for _, repo := range repos {
 			// check, wether the repo is already cloned
-			repoPath := path.Join("repos", *repo.FullName)
+			repoPath := path.Join(dataDir, *repo.FullName)
 
 			if ok, err := exists(repoPath); err != nil {
 				return err
