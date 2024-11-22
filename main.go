@@ -23,11 +23,19 @@ var githubUsers []githubUser
 var dataDir string
 
 func init() {
-	if err := godotenv.Load(".env"); err != nil {
-		log.Fatalln("Error loading .env file")
+	var ok bool
+	var envDir string
+
+	if dataDir, ok = os.LookupEnv("DATA_DIR"); !ok {
+		dataDir = "repos"
+		envDir = "."
+	} else {
+		envDir = dataDir
 	}
 
-	dataDir = os.Getenv("DATA_DIR")
+	if err := godotenv.Load(path.Join(envDir, ".env")); err != nil {
+		log.Fatalln("Error loading .env file")
+	}
 
 	credentials := strings.Split(os.Getenv("CREDENTIALS_GITHUB"), ",")
 
