@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -20,20 +22,13 @@ type githubUser struct {
 }
 
 var githubUsers []githubUser
-var dataDir string
+
+const dataDir = "/mnt/data"
 
 func init() {
-	var ok bool
-	var envDir string
+	if err := godotenv.Load(path.Join(dataDir, ".env")); err != nil {
+		fmt.Println(path.Join(dataDir, ".env"))
 
-	if dataDir, ok = os.LookupEnv("DATA_DIR"); !ok {
-		dataDir = "repos"
-		envDir = "."
-	} else {
-		envDir = dataDir
-	}
-
-	if err := godotenv.Load(path.Join(envDir, ".env")); err != nil {
 		log.Fatalln("Error loading .env file")
 	}
 
@@ -65,18 +60,23 @@ func (g *githubUser) backup() error {
 			repoPath := path.Join(dataDir, *repo.FullName)
 
 			if ok, err := exists(repoPath); err != nil {
-				return err
+				return fmt.Errorf("can't check for existance of %q: %v", repoPath, err)
 			} else if !ok {
-				if _, err := git.PlainClone(repoPath, false, &git.CloneOptions{URL: *repo.CloneURL, Auth: &g.auth, Mirror: true}); err != nil {
-					return err
+				if _, err := git.PlainClone(path.Join(repoPath, ".git"), true, &git.CloneOptions{URL: *repo.CloneURL, Auth: &g.auth}); err != nil {
+					return fmt.Errorf("can't clone %q: %v", *repo.CloneURL, err)
+				} else {
+					fmt.Printf("cloned repo %q\n", *repo.FullName)
 				}
 			} else if r, err := git.PlainOpen(repoPath); err != nil {
-				return err
-			} else if wt, err := r.Worktree(); err != nil {
-			} else {
-				if err := wt.Pull(&git.PullOptions{Auth: &g.auth}); err != nil {
-					return err
+				return fmt.Errorf("can't open repo at %q: %v", repoPath, err)
+			} else if err := r.FetchContext(context.Background(), &git.FetchOptions{Auth: &g.auth}); err != nil {
+				if errors.Is(err, git.NoErrAlreadyUpToDate) {
+					fmt.Printf("repo %q already up to date\n", *repo.FullName)
+				} else {
+					return fmt.Errorf("can't fetch repo %q: %v", *repo.FullName, err)
 				}
+			} else {
+				fmt.Printf("fetched repo %q\n", *repo.FullName)
 			}
 		}
 
@@ -85,9 +85,21 @@ func (g *githubUser) backup() error {
 }
 
 func main() {
+	var wg sync.WaitGroup
+
 	for _, user := range githubUsers {
-		go user.backup()
+		wg.Add(1)
+
+		go func(user githubUser) {
+			if err := user.backup(); err != nil {
+				fmt.Println(err.Error())
+			}
+
+			wg.Done()
+		}(user)
 	}
+
+	wg.Wait()
 }
 
 func exists(pth string) (bool, error) {
