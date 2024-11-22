@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/google/go-github/v66/github"
 	"github.com/joho/godotenv"
+	"github.com/robfig/cron"
 )
 
 type githubUser struct {
@@ -62,7 +63,7 @@ func (g *githubUser) backup() error {
 			if ok, err := exists(repoPath); err != nil {
 				return fmt.Errorf("can't check for existance of %q: %v", repoPath, err)
 			} else if !ok {
-				if _, err := git.PlainClone(path.Join(repoPath, ".git"), true, &git.CloneOptions{URL: *repo.CloneURL, Auth: &g.auth}); err != nil {
+				if _, err := git.PlainClone(path.Join(repoPath, ".git"), false, &git.CloneOptions{URL: *repo.CloneURL, Mirror: true, Auth: &g.auth}); err != nil {
 					return fmt.Errorf("can't clone %q: %v", *repo.CloneURL, err)
 				} else {
 					fmt.Printf("cloned repo %q\n", *repo.FullName)
@@ -84,7 +85,7 @@ func (g *githubUser) backup() error {
 	}
 }
 
-func main() {
+func backupAll() {
 	var wg sync.WaitGroup
 
 	for _, user := range githubUsers {
@@ -110,4 +111,26 @@ func exists(pth string) (bool, error) {
 	} else {
 		return false, err
 	}
+}
+
+func main() {
+	// set up cronjob
+	c := cron.New()
+
+	var cronInterval string
+	var ok bool
+	if cronInterval, ok = os.LookupEnv("INTERVAL"); !ok {
+		cronInterval = "0 0 0 * * * "
+	}
+
+	c.AddFunc(cronInterval, backupAll)
+
+	// run at start
+	backupAll()
+
+	c.Start()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	wg.Wait()
 }
